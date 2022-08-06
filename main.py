@@ -148,6 +148,7 @@ async def change_frame(message: types.Message, state: FSMContext):
         else:
             await Form.chosen_task.set()
             keybrd = await chosen_task(message, state)
+            flag = True
     if not flag:
         keybrd = await get_keyboard_frame(message, data['frame'], state)
         print(data['frame'], "change_frame")
@@ -210,7 +211,7 @@ async def sending_task(message: types.Message, state: FSMContext):
         islate = data['islate']
         users = c.execute(f"""UPDATE tasks SET solved_by = (solved_by || '{message.from_user.id} ') WHERE title == '{title}'""")
         conn.commit()
-        await bot.send_message(teacher, f'ℹ️ Новое решение от {message.from_user.first_name} {message.from_user.last_name} {"с опозданием‼️" if islate else ""}')
+        await bot.send_message(teacher, f'ℹ️ Новое решение от {message.from_user.first_name if not message.from_user.first_name is None else ""} {message.from_user.last_name if not message.from_user.last_name is None else ""} {"с опозданием‼️" if islate else ""}')
         await bot.forward_message(teacher, message.from_user.id, message.message_id)
         await bot.send_message(message.from_user.id, '✅ Решение отправлено учителю ', reply_markup=students_main_kb)
         await Form.idle.set()
