@@ -13,7 +13,11 @@ import time
 
 conn = sqlite3.connect('database.db')
 c = conn.cursor()
-#c.execute("DROP TABLE tasks")
+#c.execute("DROP TABLE users")
+c.execute('''
+          CREATE TABLE IF NOT EXISTS users
+          (user_id TEXT PRIMARY KEY, is_teacher BOOLEAN DEFAULT FALSE, teacher DEFAULT NULL)
+          ''')
 c.execute('''CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT, message_id TEXT, solved_by TEXT, dead_line TEXT)''')
 conn.commit()
 
@@ -39,28 +43,29 @@ class Form(StatesGroup):
     creating_task = State()
     setting_deadline = State()
     choosing_task = State()
-
+    chosen_task = State()
+    sending_task = State()
 
 @dp.message_handler(commands=['start'])
 async def get_keyboard(message: types.Message):
-    teacher = False
-    if teacher:
-        await Form.idle.set()
-        await message.answer('Меню', reply_markup=teacher_main_kb)
-        c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", TRUE, NULL)
-                  ''')
-    else:
-        await Form.idle.set()
-        await message.answer('Меню', reply_markup=students_main_kb)
-        c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", FALSE, NULL)
-                  ''')
+    await Form.idle.set()
+    await message.answer('Меню', reply_markup=teacher_main_kb)
+    c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", TRUE, NULL)
+              ''')
     conn.commit()
 
+@dp.message_handler(commands=['start2'])
+async def get_keyboard(message: types.Message):
+    await Form.idle.set()
+    await message.answer('Меню', reply_markup=students_main_kb)
+    c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", FALSE, 408512172)
+              ''')
+    conn.commit()
 
 # ==============================TEACHERS BEGIN==============================
 @dp.message_handler(lambda message: 'Добавить задание' in message.text, state=Form.idle)
 async def add_task(message: types.Message):
-    await message.answer('Отправьте фотографии', reply_markup=teacher_main_kb)
+    await message.answer('Отправьте новое задание', reply_markup=teacher_main_kb)
     await Form.creating_task.set()
 
 
@@ -97,23 +102,15 @@ async def create_task2(message: types.Message, state: FSMContext):
         #sending new task to students
         users = c.execute("""SELECT user_id FROM users WHERE is_teacher == FALSE""")
         records = c.fetchall()
-        print(time.time(), deadline)
+        print(records)
         title = data['title']
         c.execute(f"""INSERT INTO tasks (title, message_id, solved_by, dead_line) VALUES ('{title}', '{msg_id}', '', '{int(time.time()) + deadline}')""")
         for user in records:
             await bot.forward_message(int(user[0]), message.from_user.id, msg_id)
             deadline_msg = f"Дедлайн до: {time.strftime('%Y-%m-%d %H:%M', time.localtime(int(time.time() + deadline)))} \nЧасов осталось: {deadline / 60 / 60}"
-            await bot.send_message(int(user[0]), deadline_msg, reply_markup=teacher_main_kb)
+            await bot.send_message(int(user[0]), deadline_msg)
             conn.commit()
     await Form.idle.set()
-
-
-    # forward to everyone
-    await Form.idle.set()
-
-def create_task(title, text, photo):
-    pass
-    # may be title text not needed
 
 # ==============================TEACHERS END==============================
 
@@ -123,7 +120,7 @@ def create_task(title, text, photo):
 
 # в отображении кнопок будут проблемы т.к есть ограничение на их количество
 #students_main_kb
-@dp.message_handler(lambda message: message.text == 'Список заданий', state=Form.idle)
+@dp.message_handler(lambda message: 'Список заданий' in message.text, state=Form.idle)
 async def get_tasks(message: types.Message):
     # get messages ids from db
     sers = c.execute("""SELECT *  FROM tasks""")
@@ -139,18 +136,62 @@ async def get_tasks(message: types.Message):
         else:
             tasks_kb.add(KeyboardButton(f"{task[1]} - Просрочено"))    
 
-    tasks_kb.add(KeyboardButton(f"Вернуться в меню"))    
+    tasks_kb.add(KeyboardButton(f"Назад"))    
 
     await message.answer(f'Список ваших заданий: {tasks}', reply_markup=tasks_kb)
-    await Form.choosing_task.set()
+    await Form.chosen_task.set()
 
 
-@dp.message_handler(lambda message: 'Вернуться в меню' in message.text, state=Form.choosing_task)
-async def get_tasks(message: types.Message):
+@dp.message_handler(lambda message: 'Назад' not in message.text, state=Form.chosen_task)
+async def chosen_task(message: types.Message, state: FSMContext):
+    title = message.text.split(' - ')[0]
+    chosen_task = ReplyKeyboardMarkup(resize_keyboard=True)  
+    chosen_task.add(KeyboardButton(f"Назад"))
+    users = c.execute(f"""SELECT teacher FROM users WHERE user_id == {message.from_user.id}""")
+    records = c.fetchall()
+    teacher = int(records[0][0])
+    tasks = c.execute(f"""SELECT message_id, dead_line FROM tasks WHERE title == '{title}'""")
+    records2 = c.fetchall()
+    message_id = int(records2[0][0])
+    islate = False if int(records2[0][1]) > int(time.time()) else True
+    async with state.proxy() as data:
+        data['teacher'] = teacher
+        data['title'] = title
+        data['islate'] = islate
+    await bot.forward_message(message.from_user.id, teacher, int(message_id))
+    await bot.send_message(message.from_user.id, 'Отправьте решение или вернитесь к списку заданий', reply_markup=chosen_task)
+    await Form.sending_task.set()
+
+@dp.message_handler(content_types=['photo', 'text'], state=Form.sending_task)
+async def sending_task(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        teacher = data['teacher'] 
+        title = data['title']
+        islate = data['islate']
+        users = c.execute(f"""UPDATE tasks SET solved_by = (solved_by || '{message.from_user.id} ') WHERE title == '{title}'""")
+        conn.commit()
+        await bot.send_message(teacher, f'Новое решение от {message.from_user.first_name} {message.from_user.last_name} {"с опозданием!" if islate else ""}')
+        await bot.forward_message(teacher, message.from_user.id, message.message_id)
+        await bot.send_message(message.from_user.id, 'Решение отправлено учителю', reply_markup=students_main_kb)
+        await Form.idle.set()
+    
+
+@dp.message_handler(lambda message: 'Назад' in message.text, state=Form.sending_task)
+async def back_to_menu(message: types.Message):
+    Form.idle.set()
+    await get_tasks(message)
+@dp.message_handler(lambda message: 'Назад' in message.text, state=Form.chosen_task)
+async def back_to_menu(message: types.Message):
+    await Form.idle.set()
     await get_keyboard(message)
 
-# ==============================STUDENTS END==============================
 
+
+@dp.message_handler()
+async def log_message(message: types.Message):
+    print(message)
+# ==============================STUDENTS END==============================
+    
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
