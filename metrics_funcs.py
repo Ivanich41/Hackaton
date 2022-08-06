@@ -40,5 +40,3 @@ def stat_student(student_id):
     conn.close()
 
 
-stat_task()
-stat_student("1536372")
