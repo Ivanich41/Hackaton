@@ -5,7 +5,7 @@ import sqlite3
 def stat_task():
     labels = []
     values = []
-    conn = sqlite3.connect("database.db")
+    conn = sqlite3.connect("identifier.sqlite")
     c = conn.cursor()
     query = '''SELECT title, solved_by FROM tasks'''
     res = c.execute(query)
@@ -15,14 +15,14 @@ def stat_task():
     fig1, ax1 = plt.subplots()
     plt.title("Количество решений тасков")
     ax1.bar(labels, values, color="g")
-    plt.show()
+    plt.savefig("tasks_metric.png")
     conn.close()
 
 
 def stat_student(student_id):
     labels = ["Решено", "Не решено"]
     values = []
-    conn = sqlite3.connect("database.db")
+    conn = sqlite3.connect("identifier.sqlite")
     c = conn.cursor()
     query = f'''SELECT COUNT(*), (SELECT COUNT(*) FROM tasks) FROM tasks WHERE solved_by LIKE "%{student_id}%"'''
     res_complite = c.execute(query)
@@ -36,6 +36,9 @@ def stat_student(student_id):
             wedgeprops=dict(width=0.6),
             colors=["g", "r"],
             autopct='%1.1f%%')
-    plt.show()
+    plt.savefig(f"{student_id}.png")
     conn.close()
 
+
+stat_task()
+stat_student("1536372")
