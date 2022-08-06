@@ -10,6 +10,7 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
 import sqlite3
 import time
+import utils
 
 conn = sqlite3.connect('database.db')
 c = conn.cursor()
@@ -89,14 +90,15 @@ async def create_task2(message: types.Message, state: FSMContext):
         msg_id = data['msg_id'] 
         txt = message.text
         if 'час' in message.text:
-            deadline = int(txt.split()[0]) * 60 * 60
+            deadline = float(txt.split()[0]) * 60 * 60
         elif 'день' in message.text:
-            deadline =  int(txt.split()[0]) * 60 * 60 * 24
+            deadline = float(txt.split()[0]) * 60 * 60 * 24
         elif 'минут' in message.text:
-            deadline =  int(txt.split()[0]) * 60
+            deadline = float(txt.split()[0]) * 60
         else:
-            deadline =  int(txt.split()[0]) * 60 * 60
+            deadline = float(txt.split()[0]) * 60 * 60
         print(msg_id)   
+        deadline = int(deadline)
         await bot.send_message(message.from_user.id, 'Задание отправлено ученикам', reply_markup=teacher_main_kb)
         await Form.idle.set()
         #sending new task to students
@@ -107,7 +109,7 @@ async def create_task2(message: types.Message, state: FSMContext):
         c.execute(f"""INSERT INTO tasks (title, message_id, solved_by, dead_line) VALUES ('{title}', '{msg_id}', '', '{int(time.time()) + deadline}')""")
         for user in records:
             await bot.forward_message(int(user[0]), message.from_user.id, msg_id)
-            deadline_msg = f"Дедлайн до: {time.strftime('%Y-%m-%d %H:%M', time.localtime(int(time.time() + deadline)))} \nЧасов осталось: {deadline / 60 / 60}"
+            deadline_msg = f"Дедлайн до: {time.strftime('%Y-%m-%d %H:%M', time.localtime(int(time.time() + deadline)))} \nОсталось: {utils.calculate_time(deadline)}"
             await bot.send_message(int(user[0]), deadline_msg)
             conn.commit()
     await Form.idle.set()
