@@ -1,3 +1,5 @@
+#!/usr/bin/ python3
+# encoding: utf-8
 import logging
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import ReplyKeyboardRemove, \
@@ -125,16 +127,14 @@ async def create_task2(message: types.Message, state: FSMContext):
             deadline = float(txt.split()[0]) * 60
         else:
             deadline = float(txt.split()[0]) * 60 * 60
-        print(msg_id)   
         deadline = int(deadline)
         await bot.send_message(message.from_user.id, '📤 Задание отправлено ученикам', reply_markup=teacher_main_kb)
         await Form.idle.set()
         #sending new task to students
         users = c.execute("""SELECT user_id FROM users WHERE is_teacher == FALSE""")
         records = c.fetchall()
-        print(records)
         title = data['title']
-        c.execute(f"""INSERT INTO tasks (title, message_id, solved_by, dead_line) VALUES ('{title}', '{msg_id}', '', '{int(time.time()) + deadline}')""")
+        c.execute(f"""INSERT INTO tasks (title, message_id, solved_by, dead_line) VALUES ('{title.replace("'", "").replace('"', "")}', '{msg_id}', '', '{int(time.time()) + deadline}')""")
         for user in records:
             await bot.forward_message(int(user[0]), message.from_user.id, msg_id)
             deadline_msg = f"🔸Дедлайн до: {time.strftime('%Y-%m-%d %H:%M', time.localtime(int(time.time() + deadline)))} \n🔸Осталось: {utils.calculate_time(deadline)}"
@@ -147,9 +147,6 @@ async def create_task2(message: types.Message, state: FSMContext):
 
 
 # ==============================STUDENTS==============================
-
-# в отображении кнопок будут проблемы т.к есть ограничение на их количество
-#students_main_kb
 
 @dp.message_handler(lambda message: 'Профиль' in message.text, state=Form.idle)
 async def get_tasks(message: types.Message, state: FSMContext):
@@ -185,19 +182,16 @@ async def change_frame(message: types.Message, state: FSMContext):
             flag = True
     if not flag:
         keybrd = await get_keyboard_frame(message, data['frame'], state)
-        print(data['frame'], "change_frame")
         await bot.send_message(message.from_user.id, f'🔄 Страница обновлена', reply_markup=keybrd)
 
 
 async def get_keyboard_frame(message: types.Message, page: int, state: FSMContext):
     sers = c.execute("""SELECT *  FROM tasks""")
     records = c.fetchall()
-    print(records)
     tasks = [x for x in records if str(message.from_user.id) not in x[3]]
     ans = ""
     pages = ceil(len(tasks) / 4)
     async with state.proxy() as data:    
-        print(page, data['frame'], "get_keyboard_frame")
         if page <= 0 or data['frame'] <= 0: 
             page = 1
             data['frame'] = 1
@@ -206,7 +200,6 @@ async def get_keyboard_frame(message: types.Message, page: int, state: FSMContex
             page = pages
     tasks_kb = ReplyKeyboardMarkup(resize_keyboard=True)
     for task in tasks[(page-1)*4:(page-1)*4+4]:
-        print(tasks[(page-1)*4:(page-1)*4+4])
         timeleft = int(task[4]) - int(time.time())
         if timeleft > 0:
             tasks_kb.add(KeyboardButton(f"{task[1]} - 🔸{utils.calculate_time(timeleft)}🔸"))    
@@ -222,13 +215,10 @@ async def chosen_task(message: types.Message, state: FSMContext):
     title = message.text.split(' - ')[0]
     chosen_task = ReplyKeyboardMarkup(resize_keyboard=True)  
     chosen_task.add(KeyboardButton(f"◀️ Назад"))
-    print(message.text)
-    print(f"{title}112312")
     users = c.execute(f"""SELECT teacher FROM users WHERE user_id == {message.from_user.id}""")
     records = c.fetchall()
-    print(f"{records}12312")
     teacher = int(records[0][0])
-    tasks = c.execute(f"""SELECT message_id, dead_line FROM tasks WHERE title == '{title}'""")
+    tasks = c.execute(f"""SELECT message_id, dead_line FROM tasks WHERE title == '{title.replace("'", "").replace('"    ', "")}'""")
     records2 = c.fetchall()
 
     message_id = int(records2[0][0])
@@ -243,32 +233,31 @@ async def chosen_task(message: types.Message, state: FSMContext):
 
 @dp.message_handler(content_types=['photo', 'text'] , state=Form.sending_task)
 async def sending_task(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        teacher = data['teacher'] 
-        title = data['title']
-        islate = data['islate']
-        users = c.execute(f"""UPDATE tasks SET solved_by = (solved_by || '{message.from_user.id} ') WHERE title == '{title}'""")
-        conn.commit()
-        await bot.send_message(teacher, f'ℹ️ Новое решение от {message.from_user.first_name if not message.from_user.first_name is None else ""} {message.from_user.last_name if not message.from_user.last_name is None else ""} {"с опозданием‼️" if islate else ""}')
-        await bot.forward_message(teacher, message.from_user.id, message.message_id)
-        await bot.send_message(message.from_user.id, '✅ Решение отправлено учителю ', reply_markup=students_main_kb)
-        await Form.idle.set()
+    if '◀️ Назад' in message.text: 
+        await get_tasks(message, state)
+        await Form.choosing_frame.set()
+    else:
+        async with state.proxy() as data:
+            teacher = data['teacher'] 
+            title = data['title']
+            islate = data['islate']
+            users = c.execute(f"""UPDATE tasks SET solved_by = (solved_by || '{message.from_user.id} ') WHERE title == '{title.replace("'", "").replace('"', "")}'""")
+            conn.commit()
+            await bot.send_message(teacher, f'ℹ️ Новое решение от {message.from_user.first_name if not message.from_user.first_name is None else ""} {message.from_user.last_name if not message.from_user.last_name is None else ""} {"с опозданием‼️" if islate else ""}')
+            await bot.forward_message(teacher, message.from_user.id, message.message_id)
+            await bot.send_message(message.from_user.id, '✅ Решение отправлено учителю ', reply_markup=students_main_kb)
+            await Form.idle.set()
     
 
 @dp.message_handler(lambda message: 'Назад' in message.text, state=Form.sending_task)
 async def back_to_menu(message: types.Message):
-    Form.idle.set()
+    await Form.idle.set()
     await get_tasks(message)
 @dp.message_handler(lambda message: 'Назад' in message.text, state=Form.chosen_task)
 async def back_to_menu(message: types.Message):
     await Form.idle.set()
     await get_keyboard(message)
 
-
-
-@dp.message_handler()
-async def log_message(message: types.Message):
-    print(message)
 # ==============================STUDENTS END==============================
     
 
