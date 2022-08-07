@@ -26,6 +26,8 @@ c.execute('''CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREM
 conn.commit()
 
 API_TOKEN = ''
+with open("token.txt") as f:
+    API_TOKEN = f.read().strip()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
