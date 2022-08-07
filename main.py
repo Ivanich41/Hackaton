@@ -8,6 +8,7 @@ from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from math import ceil
+import metrics_funcs as metrics
 import sqlite3
 import time
 import utils
@@ -34,10 +35,11 @@ dp = Dispatcher(bot, storage=MemoryStorage())
 # Keyboards
 teacher_main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
 teacher_main_kb.add(KeyboardButton('➕ Добавить задание'))
+teacher_main_kb.add(KeyboardButton('📊 Аналитика'))
 
 students_main_kb = ReplyKeyboardMarkup(resize_keyboard=True)
 students_main_kb.add(KeyboardButton('📔 Список заданий'))
-
+students_main_kb.add(KeyboardButton('📊 Профиль'))
 
 class Form(StatesGroup):
     idle = State()
@@ -51,13 +53,31 @@ class Form(StatesGroup):
 @dp.message_handler(commands=['start'])
 async def get_keyboard(message: types.Message):
     await Form.idle.set()
+    role_kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    role_kb.add(KeyboardButton('👨‍🏫 Я учитель'))
+    role_kb.add(KeyboardButton('👨‍🎓 Я ученик'))
+    await message.answer('❔ Выберите роль', reply_markup=role_kb)
+
+
+@dp.message_handler(lambda message: 'Я учитель' in message.text, state=Form.idle)
+async def get_keyboard2(message: types.Message):
+    await Form.idle.set()
     await message.answer('📚 Меню', reply_markup=teacher_main_kb)
     c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", TRUE, NULL)
               ''')
     conn.commit()
+    
+@dp.message_handler(lambda message: 'Я ученик' in message.text, state=Form.idle)
+async def get_keyboard3(message: types.Message):
+    await Form.idle.set()
+    await message.answer('📚 Меню', reply_markup=students_main_kb)
+    c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", FALSE, 408512172)
+              ''')
+    conn.commit()
+
 
 @dp.message_handler(commands=['start2'])
-async def get_keyboard(message: types.Message):
+async def get_keyboard4(message: types.Message):
     await Form.idle.set()
     await message.answer('📚 Меню', reply_markup=students_main_kb)
     c.execute(f'''INSERT OR IGNORE INTO users VALUES ("{message.from_user.id}", FALSE, 408512172)
@@ -65,24 +85,31 @@ async def get_keyboard(message: types.Message):
     conn.commit()
 
 # ==============================TEACHERS BEGIN==============================
+@dp.message_handler(lambda message: 'Аналитика' in message.text, state=Form.idle)
+async def get_tasks(message: types.Message, state: FSMContext):
+    teacher_metrics = metrics.stat_task()
+    await bot.send_photo(message.from_user.id, photo=teacher_metrics, caption=f'📝 Учитель:\n👤 {message.from_user.first_name if not message.from_user.first_name is None else ""} {message.from_user.last_name if not message.from_user.last_name is None else ""}')
+
+
+
 @dp.message_handler(lambda message: 'Добавить задание' in message.text, state=Form.idle)
 async def add_task(message: types.Message):
     await message.answer('ℹ️ Отправьте новое задание', reply_markup=teacher_main_kb)
     await Form.creating_task.set()
 
 
-@dp.message_handler(state=Form.creating_task)
+@dp.message_handler(content_types=['text', 'photo'], state=Form.creating_task)
 async def create_task(message: types.Message, state: FSMContext):
     msg_id = message.message_id
     await Form.setting_deadline.set()
     deadline_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    deadline_kb.add(KeyboardButton('1 день🕘'))
-    deadline_kb.add(KeyboardButton('1 час🕞'))
-    deadline_kb.add(KeyboardButton('30 минут🕔'))
+    deadline_kb.add(KeyboardButton('1 день 🕘'))
+    deadline_kb.add(KeyboardButton('1 час 🕞'))
+    deadline_kb.add(KeyboardButton('30 минут 🕔'))
     await message.answer('⏳ Выберите время на выполнение или укажите свое время в часах', reply_markup=deadline_kb)
     async with state.proxy() as data:
         data['msg_id'] = msg_id
-        data['title'] = message.text.split("\n")[0][1::]
+        data['title'] = message.text.split("\n")[0] if message.text != None else "Задание с фотографией"
 
 @dp.message_handler(state=Form.setting_deadline)
 async def create_task2(message: types.Message, state: FSMContext):
@@ -123,6 +150,13 @@ async def create_task2(message: types.Message, state: FSMContext):
 
 # в отображении кнопок будут проблемы т.к есть ограничение на их количество
 #students_main_kb
+
+@dp.message_handler(lambda message: 'Профиль' in message.text, state=Form.idle)
+async def get_tasks(message: types.Message, state: FSMContext):
+    user_metrics = metrics.stat_student(message.from_user.id)
+    await bot.send_photo(message.from_user.id, photo=user_metrics[0], caption=f'📝 Ученик:\n👤 {message.from_user.first_name if not message.from_user.first_name is None else ""} {message.from_user.last_name if not message.from_user.last_name is None else ""}\n\
+🟢 Решено: {user_metrics[1]}\n🔴 Не решено:{user_metrics[2]}')
+
 @dp.message_handler(lambda message: 'Список заданий' in message.text, state=Form.idle)
 async def get_tasks(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
@@ -188,11 +222,15 @@ async def chosen_task(message: types.Message, state: FSMContext):
     title = message.text.split(' - ')[0]
     chosen_task = ReplyKeyboardMarkup(resize_keyboard=True)  
     chosen_task.add(KeyboardButton(f"◀️ Назад"))
+    print(message.text)
+    print(f"{title}112312")
     users = c.execute(f"""SELECT teacher FROM users WHERE user_id == {message.from_user.id}""")
     records = c.fetchall()
+    print(f"{records}12312")
     teacher = int(records[0][0])
     tasks = c.execute(f"""SELECT message_id, dead_line FROM tasks WHERE title == '{title}'""")
     records2 = c.fetchall()
+
     message_id = int(records2[0][0])
     islate = False if int(records2[0][1]) > int(time.time()) else True
     async with state.proxy() as data:
@@ -203,7 +241,7 @@ async def chosen_task(message: types.Message, state: FSMContext):
     await bot.send_message(message.from_user.id, 'ℹ️ Отправьте решение или вернитесь к списку заданий', reply_markup=chosen_task)
     await Form.sending_task.set()
 
-@dp.message_handler(content_types=['photo', 'text'], state=Form.sending_task)
+@dp.message_handler(content_types=['photo', 'text'] , state=Form.sending_task)
 async def sending_task(message: types.Message, state: FSMContext):
     async with state.proxy() as data:
         teacher = data['teacher'] 
