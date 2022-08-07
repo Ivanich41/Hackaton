@@ -25,7 +25,7 @@ c.execute('''
 c.execute('''CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT, message_id TEXT, solved_by TEXT, dead_line TEXT)''')
 conn.commit()
 
-API_TOKEN = '5595903898:AAGe4opPP1_Yuxe5Tw8TsT07FGe56mgj1i4'
+API_TOKEN = ''
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
